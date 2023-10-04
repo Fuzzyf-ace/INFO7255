@@ -15,4 +15,13 @@ public class Plan extends JsonDataModel implements Serializable {
     private PlanService[] linkedPlanServices;
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd")
     private Date creationDate;
+
+    public static Plan emptyPlan() {
+        Plan plan = new Plan();
+        plan.setPlanType(null);
+        plan.setPlanCostShares(null);
+        plan.setLinkedPlanServices(null);
+        plan.setCreationDate(null);
+        return plan;
+    }
 }
