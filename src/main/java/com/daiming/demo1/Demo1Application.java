@@ -13,8 +13,8 @@ public class Demo1Application {
         SpringApplication.run(Demo1Application.class, args);
     }
 
-    @Bean
-    public Filter etagFilter() {
-        return new ShallowEtagHeaderFilter();
-    }
+//    @Bean
+//    public Filter etagFilter() {
+//        return new ShallowEtagHeaderFilter();
+//    }
 }
