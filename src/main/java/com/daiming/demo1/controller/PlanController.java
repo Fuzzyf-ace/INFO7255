@@ -17,8 +17,6 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.io.IOException;
-import java.util.Objects;
-import java.util.concurrent.TimeUnit;
 
 @RestController
 public class PlanController {
@@ -90,8 +88,25 @@ public class PlanController {
     }
 
     @PatchMapping("/plan/{id}")
-    public ResponseEntity<Plan> updatePlan(@PathVariable String id, @RequestBody UpdatePlanPatchRequestBody requestBody) {
+    public ResponseEntity<String> updatePlan(@PathVariable String id, @RequestHeader(value = "If-Match", required = false) String etag, @RequestBody UpdatePlanPatchRequestBody requestBody) {
         Plan plan = redisService.getPlan(id);
-        return null;
+        if (plan == null) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body("ObjectId does not exists!!");
+        }
+        if (etag != null) {
+            String etagFromRedis = ETagGenerator.generateETag(plan);
+            if (!etagFromRedis.equals(etag)) {
+                return ResponseEntity.status(HttpStatus.PRECONDITION_FAILED).body("Precondition Failed!!");
+            }
+        }
+        Plan updatedPlan = redisService.updatePlan(plan, requestBody);
+        return ResponseEntity
+                .ok()
+                .eTag(
+                        ETagGenerator.generateETag(updatedPlan)
+                )
+                .body(
+                        ETagGenerator.toJsonString(updatedPlan)
+                );
     }
 }
