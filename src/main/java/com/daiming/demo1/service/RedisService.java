@@ -8,12 +8,11 @@ import org.springframework.stereotype.Service;
 @Service
 public class RedisService {
 
-    private final RedisTemplate<String, Object> redisTemplate;
+    private final RedisTemplate redisTemplate;
 
-    public RedisService(RedisTemplate<String, Object> redisTemplate) {
+    public RedisService(RedisTemplate redisTemplate) {
         this.redisTemplate = redisTemplate;
     }
-
 
     public RedisOperationResponse createPlan(Plan planEntity) {
         if (redisTemplate.opsForValue().get(planEntity.getObjectId()) != null) {
