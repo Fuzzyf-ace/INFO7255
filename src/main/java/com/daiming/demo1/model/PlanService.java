@@ -8,6 +8,6 @@ import java.io.Serializable;
 @EqualsAndHashCode(callSuper = true)
 @Data
 public class PlanService extends JsonDataModel implements Serializable {
-    private Service linkedService;
+    private LinkedService linkedService;
     private MemberCostShare planserviceCostShares;
 }
