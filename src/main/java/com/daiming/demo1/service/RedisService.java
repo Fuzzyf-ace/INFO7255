@@ -1,16 +1,20 @@
 package com.daiming.demo1.service;
 
-import com.daiming.demo1.model.LinkedService;
-import com.daiming.demo1.model.MemberCostShare;
 import com.daiming.demo1.model.Plan;
 import com.daiming.demo1.model.PlanService;
 import com.daiming.demo1.model.dto.UpdatePlanPatchRequestBody;
 import com.daiming.demo1.model.dto.UpdatePlanServiceDTO;
 import com.daiming.demo1.util.ETagGenerator;
 import com.daiming.demo1.util.RedisOperationResponse;
-import com.nimbusds.jose.util.ArrayUtils;
-import org.springframework.data.redis.core.RedisTemplate;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.github.fge.jackson.JsonLoader;
+import org.json.JSONObject;
+import org.springframework.data.redis.core.HashOperations;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
+import org.json.JSONArray;
 
 import java.io.IOException;
 import java.util.*;
@@ -19,47 +23,111 @@ import java.util.stream.Stream;
 @Service
 public class RedisService {
 
-    private final RedisTemplate redisTemplate;
+    private final StringRedisTemplate redisTemplate;
 
-    public RedisService(RedisTemplate redisTemplate) {
+    public RedisService(StringRedisTemplate redisTemplate) {
         this.redisTemplate = redisTemplate;
     }
 
+    private List<Map<String, Map<String, Object>>> saveJSONArrayToRedis(JSONArray array) {
+        List<Map<String, Map<String, Object>>> list = new ArrayList<>();
+        for (int i = 0; i < array.length(); i++) {
+            Object value = array.get(i);
+            if (value instanceof JSONArray) {
+                List<Map<String, Map<String, Object>>> convertedValue = saveJSONArrayToRedis((JSONArray) value);
+                list.addAll(convertedValue);
+            } else if (value instanceof JSONObject) {
+                Map<String, Map<String, Object>> convertedValue = saveJSONObjectToRedis((JSONObject) value);
+                list.add(convertedValue);
+            }
+        }
+        return list;
+    }
+
+    public Map<String, Map<String, Object>> saveJSONObjectToRedis(JSONObject object) {
+        Map<String, Map<String, Object>> redisKeyMap = new HashMap<>();
+        Map<String, Object> objectFieldMap = new HashMap<>();
+        String redisKey = object.get("objectType") + ":" + object.get("objectId");
+        for (String field : object.keySet()) {
+            Object value = object.get(field);
+            if (value instanceof JSONObject) {
+                Map<String, Map<String, Object>> convertedValue = saveJSONObjectToRedis((JSONObject) value);
+                redisTemplate.opsForSet().add(redisKey + ":" + field,
+                        convertedValue.entrySet().iterator().next().getKey());
+            } else if (value instanceof JSONArray) {
+                List<Map<String, Map<String, Object>>> convertedValue = saveJSONArrayToRedis((JSONArray) value);
+                for (Map<String, Map<String, Object>> entry : convertedValue) {
+                    for (String listKey : entry.keySet()) {
+                        redisTemplate.opsForSet().add(redisKey + ":" + field, listKey);
+                    }
+                }
+            } else {
+                redisTemplate.opsForHash().put(redisKey, field, value.toString());
+                objectFieldMap.put(field, value);
+                redisKeyMap.put(redisKey, objectFieldMap);
+            }
+        }
+        return redisKeyMap;
+    }
+
+
     public RedisOperationResponse createPlan(Plan planEntity) {
-        if (redisTemplate.opsForValue().get(planEntity.getObjectId()) != null) {
+        if (!redisTemplate.keys("plan:" + planEntity.getObjectId() + "*").isEmpty()) {
             return RedisOperationResponse.KEY_EXISTS;
         }
-        String objectType = planEntity.getObjectType();
-        String objectId = planEntity.getObjectId();
-        // 存储整个对象
-        redisTemplate.opsForValue().set(objectType + ":" + objectId + ":Plan", planEntity);
-
-        // 存储 MemberCostShare
-        MemberCostShare planCostShares = planEntity.getPlanCostShares();
-
-        redisTemplate.opsForValue().set(objectType + ":" + objectId + ":MemberCostShare:" + planCostShares.getObjectId(), planCostShares);
-
-        // 对于 linkedPlanServices 数组的处理
-        PlanService[] linkedPlanServices = planEntity.getLinkedPlanServices();
-        for (PlanService planService : linkedPlanServices) {
-            // 存储 Service
-            redisTemplate.opsForValue().set(planService.getObjectId() + ":" + objectId + ":PlanService:" + planService.getObjectId(), planService);
-            // 对于 MemberCostShare 数组的处理
-            MemberCostShare memberCostShare = planService.getPlanserviceCostShares();
-            redisTemplate.opsForValue().set(objectType + ":" + objectId + ":PlanService:" + planService.getObjectId() + ":MemberCostShare:" + memberCostShare.getObjectId(), memberCostShare);
-            LinkedService linkedService = planService.getLinkedService();
-            redisTemplate.opsForValue().set(objectType + ":" + objectId + ":PlanService:" + planService.getObjectId() + ":LinkedService:" + linkedService.getObjectId(), linkedService);
-        }
+        //transfer planEntity to JSONObject
+        JSONObject object = new JSONObject(planEntity);
+        saveJSONObjectToRedis(object);
         return RedisOperationResponse.SUCCESS;
     }
 
 
+    public Map<String, Object> getObject(String objectKey) {
+        HashOperations<String, String, Object> operations = redisTemplate.opsForHash();
+        Set<String> keys = redisTemplate.keys(objectKey + ":*");
+//        keys.add(objectKey);
+        Map<String, Object> resultMap = new HashMap<>();
+        Map<String, Object> object = operations.entries(objectKey);
+        for (String field : object.keySet()) {
+            resultMap.put(field, object.get(field));
+        }
+        for (String key : keys) {
+            Set<String> childrenKeys = redisTemplate.opsForSet().members(key);
+            List<Map<String, Object>> children = new ArrayList<>();
+            for (String childKey : childrenKeys) {
+                Map<String, Object> subResult = getObject(childKey);
+                children.add(subResult);
+            }
+            if (children.size() > 1) {
+                resultMap.put(key.split(":")[2], children);
+            } else {
+                resultMap.put(key.split(":")[2], children.get(0));
+            }
+
+        }
+        return resultMap;
+    }
+
     public Plan getPlan(String id) {
-        return (Plan) redisTemplate.opsForValue().get(id);
+        String redisKey = "plan:" + id;
+        Map<String, Object> objectMap = getObject(redisKey);
+        if (objectMap.isEmpty()) {
+            return null;
+        }
+        ObjectMapper objectMapper = new ObjectMapper();
+        Plan plan = null;
+        try {
+            String jsonString = objectMapper.writeValueAsString(objectMap);
+            JsonNode planNode = JsonLoader.fromString(jsonString);
+            plan = objectMapper.treeToValue(planNode, Plan.class);
+        } catch (IOException e) {
+            return null;
+        }
+        return plan;
     }
 
     public RedisOperationResponse deletePlan(String id, String etag) {
-        Plan plan = (Plan) redisTemplate.opsForValue().get(id);
+        Plan plan = getPlan(id);
         if (plan == null) {
             return RedisOperationResponse.KEY_NOT_FOUND;
         }
@@ -70,7 +138,7 @@ public class RedisService {
                 return RedisOperationResponse.FAILURE;
             }
         }
-        boolean success = Boolean.TRUE.equals(redisTemplate.delete(id));
+        boolean success = deleteObject("plan:" + id);
         if (success) {
             return RedisOperationResponse.SUCCESS;
         } else {
@@ -78,8 +146,26 @@ public class RedisService {
         }
     }
 
-    public Plan updatePlan(Plan plan, UpdatePlanPatchRequestBody requestBody) {
+    public boolean deleteObject(String objectKey) {
+        Set<String> keys = redisTemplate.keys(objectKey + "*");
+        try {
+            for (String key : keys) {
+                if (!key.equals(objectKey)) {
+                    Set<String> childrenKeys = redisTemplate.opsForSet().members(key);
+                    for (String childKey : childrenKeys) {
+                        deleteObject(childKey);
+                    }
+                }
+                redisTemplate.delete(key);
+            }
+        } catch (Exception e) {
+            return false;
+        }
+        return true;
+    }
 
+
+    public Plan updatePlan(Plan plan, UpdatePlanPatchRequestBody requestBody) {
         if (requestBody.getPlanType() != null) {
             plan.setPlanType(requestBody.getPlanType());
         }
@@ -114,7 +200,14 @@ public class RedisService {
         if (requestBody.getCreationDate() != null) {
             plan.setCreationDate(requestBody.getCreationDate());
         }
-        redisTemplate.opsForValue().set(plan.getObjectId(), plan);
-        return plan;
+        deleteObject("plan:" + plan.getObjectId());
+        createPlan(plan);
+        Plan updatedPlan = getPlan(plan.getObjectId());
+        return updatedPlan;
     }
+
+    public boolean hasKey(String redisKey) {
+        return redisTemplate.hasKey(redisKey);
+    }
+
 }

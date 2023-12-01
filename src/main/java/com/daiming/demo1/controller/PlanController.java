@@ -11,11 +11,13 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.fge.jackson.JsonLoader;
 import com.github.fge.jsonschema.core.exceptions.ProcessingException;
 import com.github.fge.jsonschema.core.report.ProcessingReport;
+import org.json.JSONObject;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.io.IOException;
+import java.util.Map;
 
 @RestController
 public class PlanController {
@@ -72,7 +74,7 @@ public class PlanController {
                 ).
                 body(plan);
     }
-
+//
     @DeleteMapping("/plan/{id}")
     public ResponseEntity<String> deletePlan(@PathVariable String id, @RequestHeader(value = "If-Match", required = false) String etag) {
         RedisOperationResponse response = redisService.deletePlan(id, etag);
