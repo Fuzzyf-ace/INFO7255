@@ -25,37 +25,48 @@ public class RedisService {
 
     private final StringRedisTemplate redisTemplate;
 
-    public RedisService(StringRedisTemplate redisTemplate) {
+    private final ObjectMapper objectMapper;
+
+    private final RabbitService rabbitService;
+
+    public RedisService(StringRedisTemplate redisTemplate,
+                        RabbitService rabbitService) {
         this.redisTemplate = redisTemplate;
+        this.rabbitService = rabbitService;
+        this.objectMapper = new ObjectMapper();
     }
 
-    private List<Map<String, Map<String, Object>>> saveJSONArrayToRedis(JSONArray array) {
+    private List<Map<String, Map<String, Object>>> saveJSONArrayToRedis(JSONArray array, String parrentId, String name) {
         List<Map<String, Map<String, Object>>> list = new ArrayList<>();
         for (int i = 0; i < array.length(); i++) {
             Object value = array.get(i);
             if (value instanceof JSONArray) {
-                List<Map<String, Map<String, Object>>> convertedValue = saveJSONArrayToRedis((JSONArray) value);
+                //code never reach here
+                System.out.println("array");
+                List<Map<String, Map<String, Object>>> convertedValue = saveJSONArrayToRedis((JSONArray) value, parrentId, name);
                 list.addAll(convertedValue);
             } else if (value instanceof JSONObject) {
-                Map<String, Map<String, Object>> convertedValue = saveJSONObjectToRedis((JSONObject) value);
+                JSONObject object = (JSONObject) value;
+                Map<String, Map<String, Object>> convertedValue = saveJSONObjectToRedis(object, parrentId, name);
                 list.add(convertedValue);
             }
         }
         return list;
     }
 
-    public Map<String, Map<String, Object>> saveJSONObjectToRedis(JSONObject object) {
+    public Map<String, Map<String, Object>> saveJSONObjectToRedis(JSONObject object, String parentId, String name) {
         Map<String, Map<String, Object>> redisKeyMap = new HashMap<>();
         Map<String, Object> objectFieldMap = new HashMap<>();
         String redisKey = object.get("objectType") + ":" + object.get("objectId");
+        String id = (String) object.get("objectId");
         for (String field : object.keySet()) {
             Object value = object.get(field);
             if (value instanceof JSONObject) {
-                Map<String, Map<String, Object>> convertedValue = saveJSONObjectToRedis((JSONObject) value);
+                Map<String, Map<String, Object>> convertedValue = saveJSONObjectToRedis((JSONObject) value, id, field);
                 redisTemplate.opsForSet().add(redisKey + ":" + field,
                         convertedValue.entrySet().iterator().next().getKey());
             } else if (value instanceof JSONArray) {
-                List<Map<String, Map<String, Object>>> convertedValue = saveJSONArrayToRedis((JSONArray) value);
+                List<Map<String, Map<String, Object>>> convertedValue = saveJSONArrayToRedis((JSONArray) value, id, field);
                 for (Map<String, Map<String, Object>> entry : convertedValue) {
                     for (String listKey : entry.keySet()) {
                         redisTemplate.opsForSet().add(redisKey + ":" + field, listKey);
@@ -67,6 +78,14 @@ public class RedisService {
                 redisKeyMap.put(redisKey, objectFieldMap);
             }
         }
+
+        HashMap<String, Object> planJoin = new HashMap<>();
+        planJoin.put("name", name);
+        planJoin.put("parent", parentId);
+
+        objectFieldMap.put("plan_join", planJoin);
+
+        rabbitService.send("create", objectFieldMap);
         return redisKeyMap;
     }
 
@@ -77,7 +96,7 @@ public class RedisService {
         }
         //transfer planEntity to JSONObject
         JSONObject object = new JSONObject(planEntity);
-        saveJSONObjectToRedis(object);
+        saveJSONObjectToRedis(object, "root", "plan");
         return RedisOperationResponse.SUCCESS;
     }
 
@@ -157,10 +176,15 @@ public class RedisService {
                     }
                 }
                 redisTemplate.delete(key);
+                if (key.equals(objectKey)) {
+                    String id = key.split(":")[1];
+                    rabbitService.send("delete", Map.of("objectId", id));
+                }
             }
         } catch (Exception e) {
             return false;
         }
+
         return true;
     }
 
@@ -200,7 +224,7 @@ public class RedisService {
         if (requestBody.getCreationDate() != null) {
             plan.setCreationDate(requestBody.getCreationDate());
         }
-        deleteObject("plan:" + plan.getObjectId());
+        deletePlan(plan.getObjectId(), null);
         createPlan(plan);
         Plan updatedPlan = getPlan(plan.getObjectId());
         return updatedPlan;

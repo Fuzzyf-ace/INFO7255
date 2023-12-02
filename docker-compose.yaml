@@ -1,0 +1,75 @@
+version: '3'
+services:
+  redis:
+    image: redis:alpine
+    container_name: redis
+    ports:
+      - 6379:6379
+    volumes:
+      - ~/.docker-conf/redis/data/:/data
+    networks:
+      - info7255-elastic
+  elasticsearch:
+    container_name: elasticsearch
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.1-arm64
+    volumes:
+      - "./logstash.conf:/usr/share/logstash/pipeline/logstash.conf"
+    ports:
+      - 9200:9200
+      - 9300:9300
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - xpack.security.enrollment.enabled=true
+      - xpack.security.http.ssl.enabled=false
+      - http.cors.enabled=true
+      - http.cors.allow-origin="*"
+    networks:
+      - info7255-elastic
+
+  kibana:
+    container_name: kibana
+    image: docker.elastic.co/kibana/kibana:8.11.1-arm64
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+    ports:
+      - 5601:5601
+    links:
+      - elasticsearch
+    depends_on:
+      - elasticsearch
+    networks:
+      - info7255-elastic
+
+  apm:
+    container_name: apm
+    image: docker.elastic.co/apm/apm-server:8.11.1-arm64
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+    ports:
+      - 8200:8200
+    links:
+      - elasticsearch
+      - kibana
+    depends_on:
+      - elasticsearch
+      - kibana
+    networks:
+      - info7255-elastic
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: rabbitmq
+    ports:
+      - 5672:5672
+      - 15672:15672
+    volumes:
+      - ~/.docker-conf/rabbitmq/data/:/var/lib/rabbitmq/
+      - ~/.docker-conf/rabbitmq/log/:/var/log/rabbitmq
+    networks:
+      - info7255-elastic
+
+networks:
+  info7255-elastic:
+    external:
+      name: info7255-elastic

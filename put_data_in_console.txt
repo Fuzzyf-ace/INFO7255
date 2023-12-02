@@ -1,0 +1,141 @@
+
+# Click the Variables button, above, to create your own variables.
+GET /plan_index/_search // _search
+{
+  "query": {
+    "match_all": {}  // match_all
+  }
+}
+
+GET /plan_index/_search
+{
+  "query": {
+    "has_child": {
+      "type": "planserviceCostShares",
+      "query": {
+        "range": {
+          "copay": {
+            "gte": 1
+          }
+        }
+      }
+    }
+  }
+}
+
+PUT /plan_index
+{
+  "mappings": {
+    "_routing": {
+      "required": true
+    },
+    "properties": {
+      "plan_join": {
+        "type": "join",
+        "relations": {
+          "plan": ["planCostShares","linkedPlanServices"],
+          "linkedPlanServices":["linkedService","planserviceCostShares"]
+        }
+      }
+    }
+  }
+}
+
+
+
+PUT /plan_index/_doc/12xvxc345ssdsds-508?routing=0
+{
+  "plan_join": {
+    "name": "plan"
+  },
+  "_org": "example.com",
+  "objectId": "12xvxc345ssdsds-508",
+  "objectType": "plan",
+  "planType": "inNetwork",
+  "creationDate": "12-12-2017"
+}
+
+PUT /plan_index/_doc/1234vxc2324sdf-501?routing=12xvxc345ssdsds-508
+{
+  "plan_join": {
+    "name": "planCostShares",
+    "parent": "12xvxc345ssdsds-508"
+  },
+  "deductible": 2000,
+  "_org": "example.com",
+  "copay": 23,
+  "objectId": "1234vxc2324sdf-501",
+  "objectType": "membercostshare"
+}
+
+PUT /plan_index/_doc/27283xvx9asdff-504?routing=12xvxc345ssdsds-508
+{
+  "plan_join": {
+    "name": "linkedPlanServices",
+    "parent": "12xvxc345ssdsds-508"
+  },
+  "_org": "example.com",
+  "objectId": "27283xvx9asdff-504",
+  "objectType": "planservice"
+}
+
+PUT /plan_index/_doc/27283xvx9sdf-507?routing=12xvxc345ssdsds-508
+{
+  "plan_join": {
+    "name": "linkedPlanServices",
+    "parent": "12xvxc345ssdsds-508"
+  },
+  "_org": "example.com",
+  "objectId": "27283xvx9sdf-507",
+  "objectType": "planservice"
+}
+
+PUT /plan_index/_doc/1234520xvc30asdf-502?routing=27283xvx9asdff-504
+{
+  "plan_join": {
+    "name": "linkedService",
+    "parent": "27283xvx9asdff-504"
+  },
+  "_org": "example.com",
+  "objectId": "1234520xvc30asdf-502",
+  "objectType": "service",
+  "name": "Yearly physical"
+}
+
+PUT /plan_index/_doc/1234512xvc1314asdfs-503?routing=27283xvx9asdff-504
+{
+  "plan_join": {
+    "name": "planserviceCostShares",
+    "parent": "27283xvx9asdff-504"
+  },
+  "_org": "example.com",
+  "deductible": 10,
+  "copay": 0,
+  "objectId": "1234512xvc1314asdfs-503",
+  "objectType": "membercostshare"
+}
+
+PUT /plan_index/_doc/1234520xvc30sfs-505?routing=27283xvx9sdf-507
+{
+  "plan_join": {
+    "name": "linkedService",
+    "parent": "27283xvx9sdf-507"
+  },
+  "_org": "example.com",
+  "objectId": "1234520xvc30sfs-505",
+  "objectType": "service",
+  "name": "well baby"
+}
+
+PUT /plan_index/_doc/1234512xvc1314sdfsd-506?routing=27283xvx9sdf-507
+{
+  "plan_join": {
+    "name": "planserviceCostShares",
+    "parent": "27283xvx9sdf-507"
+  },
+  "deductible": 10,
+  "_org": "example.com",
+  "copay": 175,
+  "objectId": "1234512xvc1314sdfsd-506",
+  "objectType": "membercostshare"
+}
