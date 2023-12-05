@@ -8,4 +8,4 @@
  - Store data using redis as no-sql database
  - Send data to RabbitMQ for queueing
  - Consume data from RabbitMQ and search with join using Elastic Search
- - The consumer is implemented [here](https://github.com/Fuzzyf-ace/INFO7255-Demo3)
+  - The consumer is implemented [here](https://github.com/Fuzzyf-ace/INFO7255-Demo3)
